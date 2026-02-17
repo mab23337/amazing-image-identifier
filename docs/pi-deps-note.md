@@ -9,3 +9,6 @@ Workaround for Epic 1 testing:
 To run full AI inference on Pi:
 - Use Python 3.10/3.11 (more compatible torch/torchvision wheels), OR
 - Update pinned torchvision version to one available for this Pi/Python environment.
+
+## Logging (TR-32)
+A reusable logging helper was added in logging_setup.py. It can be imported by the Flask app to provide console + rotating file logging.
