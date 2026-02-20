@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+#SR-47 Limit
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB limit
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'jpg', 'jpeg', 'png'}
@@ -129,7 +130,23 @@ def validate_image_file(file_path):
         return True
     except:
         return False
-
+  #SR-48      
+def validate_magic_bytes(file):
+    """Validate image by checking magic header bytes (SR-48)"""
+    header = file.read(8)
+    file.seek(0) # Reset file pointer after reading
+    
+    # JPEG
+    if header.startswith(b'\xff\xd8\xff'):
+        return True
+        
+    # PNG
+    if header.startswith(b'\x89PNG\r\n\x1a\n'):
+        return True
+        
+        return False
+        
+#SR-46 
 def sanitize_filename(filename):
     """Sanitize filename to prevent directory traversal"""
     filename = os.path.basename(filename)
@@ -366,7 +383,8 @@ def clear_history():
 def index():
     """Main landing page"""
     return render_template('index.html')
-
+    
+#SR-48 header validation
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle image upload and processing"""
@@ -383,8 +401,14 @@ def upload_file():
     
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type. Only JPG and PNG are allowed.'}), 400
-    
+        
+        # SR-48 Magic Byte Check
+    if not validate_magic_bytes(file):
+        logger.warning("Invalid magic bytes detected")
+        return jsonify({'error': 'Invalid image header'}), 400
+        
     try:
+        #SR-46
         filename = sanitize_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
@@ -433,10 +457,19 @@ def upload_file():
         }
         
         logger.info(f"Processed {filename} in {processing_time:.2f}s")
+        #CR-49 Priv Scrubbing
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            logger.info(f"Deleted uploaded file: {filename}")
         return jsonify(response)
         
     except Exception as e:
         logger.error(f"Error processing image: {e}")
+        
+        if 'filepath' in locals() and os.path.exists(filepath):
+            os.remove(filepath)
+            logger.info("Deleted file after failure")
+            
         return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @app.route('/download/<format>', methods=['POST'])
@@ -510,11 +543,13 @@ def health():
         'ocr_enabled': False  # Disabled for Pi performance
     })
 
+#CR-50
 @app.route('/credits')
 def credits():
     """Open source credits page"""
     return render_template('credits.html')
-
+    
+#SR-47 limit rejection
 @app.errorhandler(413)
 def too_large(e):
     """Handle file too large error"""
