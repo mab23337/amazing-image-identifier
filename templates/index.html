@@ -472,6 +472,15 @@
                         <h3>Primary Colors</h3>
                         <div id="colors"></div>
                     </div>
+
+                    <div class="result-card full">
+                        <h3>Download Results</h3>
+                        <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+                            <button class="btn" onclick="downloadResults('txt')" style="flex: 1; min-width: 150px;">📄 Download TXT</button>
+                            <button class="btn" onclick="downloadResults('json')" style="flex: 1; min-width: 150px;">📊 Download JSON</button>
+                            <button class="btn" onclick="playAudioReadout()" style="flex: 1; min-width: 150px;">🔊 Audio Readout</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -482,6 +491,7 @@
         let selectedFile = null;
         let history = JSON.parse(localStorage.getItem('imgHistory') || '[]');
         let activeHistoryId = null;
+        let currentResults = null; // Store current results for downloads
 
         // ---- Elements ----
         const dropArea = document.getElementById('dropArea');
@@ -565,6 +575,7 @@
         };
 
         function displayResults(data) {
+            currentResults = data; // Store for downloads
             document.getElementById('originalImage').src = data.original_image;
             document.getElementById('caption').textContent = data.caption;
             document.getElementById('time').textContent = `⏱ ${data.processing_time}s`;
@@ -695,6 +706,104 @@
 
         // ---- Init ----
         renderHistory();
+
+        // ---- Download Results ----
+        function downloadResults(format) {
+            if (!currentResults) {
+                alert('No results to download. Please analyze an image first.');
+                return;
+            }
+
+            fetch(`/download/${format}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentResults)
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Download failed');
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `analysis.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            })
+            .catch(error => {
+                console.error('Download error:', error);
+                alert('Failed to download results. Please try again.');
+            });
+        }
+
+        // ---- Audio Readout ----
+        function playAudioReadout() {
+            if (!currentResults) {
+                alert('No results to read. Please analyze an image first.');
+                return;
+            }
+
+            // Check if browser supports speech synthesis
+            if (!('speechSynthesis' in window)) {
+                alert('Audio readout is not supported in your browser.');
+                return;
+            }
+
+            // Build text to speak
+            let text = 'Analysis results. ';
+            
+            // Add caption
+            if (currentResults.caption) {
+                text += currentResults.caption + '. ';
+            }
+            
+            // Add detected objects
+            if (currentResults.objects && currentResults.objects.length > 0) {
+                text += `Detected ${currentResults.objects.length} object${currentResults.objects.length > 1 ? 's' : ''}. `;
+                currentResults.objects.slice(0, 5).forEach((obj) => {
+                    const confidence = Math.round(obj.confidence * 100);
+                    text += `${obj.label} with ${confidence} percent confidence. `;
+                });
+            }
+            
+            // Add colors
+            if (currentResults.colors && currentResults.colors.length > 0) {
+                text += `Primary colors are ${currentResults.colors.join(', ')}. `;
+            }
+            
+            // Add processing time
+            if (currentResults.processing_time) {
+                text += `Processing took ${currentResults.processing_time} seconds.`;
+            }
+
+            // Stop any ongoing speech
+            speechSynthesis.cancel();
+
+            // Create and speak utterance
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.9;  // Slightly slower for clarity
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            
+            // Optional: Show feedback
+            utterance.onstart = () => {
+                console.log('Audio readout started');
+            };
+            
+            utterance.onend = () => {
+                console.log('Audio readout finished');
+            };
+            
+            utterance.onerror = (event) => {
+                console.error('Audio readout error:', event);
+                alert('Audio readout failed. Please try again.');
+            };
+
+            speechSynthesis.speak(utterance);
+        }
     </script>
 </body>
 </html>
